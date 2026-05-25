@@ -219,3 +219,9 @@ __marimo__/
 
 
 dataset/
+
+/.claude
+
+/logs
+/results
+/tables
