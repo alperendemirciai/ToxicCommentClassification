@@ -27,6 +27,8 @@ from src.config import (
     BERT_EVAL_BATCH_SIZE,
     BERT_LR,
     BERT_MAX_LEN,
+    BERT_POS_WEIGHT_CLIP,
+    BERT_USE_WEIGHTED_LOSS,
     BERT_WARMUP_RATIO,
     BERT_WEIGHT_DECAY,
     LABELS,
@@ -73,8 +75,19 @@ class TrainConfig:
     weight_decay: float = BERT_WEIGHT_DECAY
     warmup_ratio: float = BERT_WARMUP_RATIO
     threshold: float = BERT_DECISION_THRESHOLD
+    use_weighted_loss: bool = BERT_USE_WEIGHTED_LOSS
+    pos_weight_clip: float = BERT_POS_WEIGHT_CLIP
     seed: int = SEED
     device: str = field(default_factory=lambda: "cuda" if torch.cuda.is_available() else "cpu")
+
+
+def _compute_pos_weight(labels: np.ndarray, clip: float) -> torch.Tensor:
+    pos = labels.sum(axis=0)
+    neg = labels.shape[0] - pos
+    pos_safe = np.maximum(pos, 1.0)
+    w = neg / pos_safe
+    w = np.minimum(w, clip)
+    return torch.tensor(w, dtype=torch.float32)
 
 
 @torch.no_grad()
@@ -131,6 +144,14 @@ def train_one_fold(
     optimizer = AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps)
 
+    loss_fn = None
+    if cfg.use_weighted_loss:
+        pos_weight = _compute_pos_weight(
+            train_df[LABELS].values.astype(np.float32), cfg.pos_weight_clip
+        ).to(cfg.device)
+        loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        log(f"  weighted loss ON  pos_weight={pos_weight.cpu().numpy().round(3).tolist()}")
+
     best_macro_f1 = -1.0
     best_epoch = -1
     best_state = None
@@ -143,8 +164,13 @@ def train_one_fold(
         n_steps = 0
         for batch in train_loader:
             inputs = {k: v.to(cfg.device) for k, v in batch.items()}
-            outputs = model(**inputs)
-            loss = outputs.loss
+            if loss_fn is not None:
+                labels = inputs.pop("labels")
+                outputs = model(**inputs)
+                loss = loss_fn(outputs.logits, labels)
+            else:
+                outputs = model(**inputs)
+                loss = outputs.loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()

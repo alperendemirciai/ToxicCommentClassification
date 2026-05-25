@@ -32,6 +32,11 @@ BERT_WEIGHT_DECAY = 0.01
 BERT_WARMUP_RATIO = 0.1
 BERT_DECISION_THRESHOLD = 0.5
 
+# Weighted loss (pos_weight on BCEWithLogitsLoss) to counter label imbalance.
+# When True, pos_weight[c] = (#neg_c / #pos_c) computed on each fold's training set.
+BERT_USE_WEIGHTED_LOSS = False
+BERT_POS_WEIGHT_CLIP = 50.0  # cap to avoid extreme weights on very rare labels
+
 # LLM defaults (used by 03_run_llm.py)
 OLLAMA_HOST = "http://localhost:11434"
 LLM_NUM_PREDICT = 64        # we only need a short JSON line
@@ -50,4 +55,5 @@ LLM_REGISTRY = {
     "qwen":    "qwen2.5:7b-instruct",
     "phi3":    "phi3:mini",
     "mistral": "mistral:latest",
+    "oss": "gpt-oss:latest"
 }
