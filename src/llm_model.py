@@ -20,8 +20,10 @@ import requests
 from src.config import (
     LABELS,
     LLM_NUM_PREDICT,
+    LLM_NUM_PREDICT_THINK,
     LLM_REQUEST_TIMEOUT,
     LLM_TEMPERATURE,
+    LLM_THINK,
     OLLAMA_HOST,
 )
 
@@ -77,6 +79,14 @@ def parse_response(raw: str) -> tuple[dict[str, int], bool]:
     return {lbl: 0 for lbl in LABELS}, True
 
 
+_REASONING_MODELS = ("gpt-oss", "deepseek-r1", "qwq", "o1")
+
+
+def _is_reasoning_model(model: str) -> bool:
+    m = model.lower()
+    return any(tag in m for tag in _REASONING_MODELS)
+
+
 def call_ollama(
     model: str,
     messages: list[dict],
@@ -85,18 +95,35 @@ def call_ollama(
     num_predict: int = LLM_NUM_PREDICT,
     temperature: float = LLM_TEMPERATURE,
     timeout: int = LLM_REQUEST_TIMEOUT,
+    think: bool = LLM_THINK,
 ) -> tuple[str, float]:
     """One blocking chat call. messages is a list of {role, content} dicts.
     Returns (response_text, latency_seconds).
+
+    `think=True` lets reasoning models emit a chain-of-thought before the JSON
+    (slower, larger token budget). `think=False` asks them to answer directly.
+    Ignored for non-reasoning models.
     """
     url = f"{host}/api/chat"
+    reasoning = _is_reasoning_model(model)
+    if reasoning and think:
+        budget = max(num_predict, LLM_NUM_PREDICT_THINK)
+    elif reasoning:
+        budget = max(num_predict, 512)
+    else:
+        budget = num_predict
     payload = {
         "model": model,
         "messages": messages,
         "stream": False,
+        # Grammar-constrain to a valid JSON object. Suppresses preambles,
+        # markdown fences, and stray prose from non-reasoning models, and keeps
+        # reasoning models' visible content strictly JSON.
+        "format": "json",
+        "think": bool(think),
         "options": {
             "temperature": temperature,
-            "num_predict": num_predict,
+            "num_predict": budget,
             "top_p": 1.0,
             "seed": 42,
         },
@@ -106,11 +133,17 @@ def call_ollama(
     r.raise_for_status()
     elapsed = time.time() - t0
     data = r.json()
-    return data.get("message", {}).get("content", ""), elapsed
+    msg = data.get("message", {})
+    content = msg.get("content", "") or ""
+    # Safety net: if a reasoning model still routed its answer into `thinking`
+    # (e.g. Ollama version that ignores `think: false`), parse from there.
+    if not content.strip():
+        content = msg.get("thinking", "") or ""
+    return content, elapsed
 
 
-def predict_one(model: str, messages: list[dict]) -> LLMPrediction:
-    raw, elapsed = call_ollama(model, messages)
+def predict_one(model: str, messages: list[dict], *, think: bool = LLM_THINK) -> LLMPrediction:
+    raw, elapsed = call_ollama(model, messages, think=think)
     labels, failure = parse_response(raw)
     return LLMPrediction(labels=labels, raw=raw, parse_failure=failure, latency_seconds=elapsed)
 

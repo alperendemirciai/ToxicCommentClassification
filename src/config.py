@@ -42,7 +42,14 @@ OLLAMA_HOST = "http://localhost:11434"
 LLM_NUM_PREDICT = 64        # we only need a short JSON line
 LLM_TEMPERATURE = 0.0
 LLM_FEW_SHOT_K = 8          # 6 (one per label) + 2 clean negatives
-LLM_REQUEST_TIMEOUT = 120   # seconds per inference
+LLM_REQUEST_TIMEOUT = 240   # seconds per inference (reasoning chains can be long)
+
+# Reasoning toggle for reasoning-capable models (gpt-oss, deepseek-r1, qwq, o1).
+# False = ask Ollama to skip CoT and emit JSON directly (fast).
+# True  = let the model think first, then emit JSON (slower, sometimes better).
+# Ignored for non-reasoning models.
+LLM_THINK = False
+LLM_NUM_PREDICT_THINK = 2048  # bigger budget when reasoning is on
 
 MODEL_REGISTRY = {
     "distilbert": "distilbert-base-uncased",

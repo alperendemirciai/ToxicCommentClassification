@@ -22,6 +22,7 @@ from src.config import (
     LABELS,
     LLM_FEW_SHOT_K,
     LLM_REGISTRY,
+    LLM_THINK,
     LOGS_DIR,
     RESULTS_DIR,
     SEED,
@@ -45,6 +46,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--only-fold", type=int, default=None)
     ap.add_argument("--limit", type=int, default=None,
                     help="optional cap on examples per fold (smoke testing)")
+    think_group = ap.add_mutually_exclusive_group()
+    think_group.add_argument("--think", dest="think", action="store_true",
+                             help="enable reasoning (chain-of-thought) for reasoning-capable models")
+    think_group.add_argument("--no-think", dest="think", action="store_false",
+                             help="disable reasoning (default for reasoning models)")
+    ap.set_defaults(think=LLM_THINK)
     return ap.parse_args()
 
 
@@ -55,14 +62,16 @@ def main() -> None:
     model_key = args.model
     model_name = LLM_REGISTRY[model_key]
     mode_dir = "zero_shot" if args.mode == "zero" else "few_shot"
-    out_root = RESULTS_DIR / f"llm_{model_key}" / mode_dir
+    # Route think/no-think runs to distinct subdirs so they don't overwrite.
+    think_tag = "think" if args.think else "nothink"
+    out_root = RESULTS_DIR / f"llm_{model_key}" / mode_dir / think_tag
     out_root.mkdir(parents=True, exist_ok=True)
 
     log = setup_logger(
-        f"llm_{model_key}_{mode_dir}",
-        LOGS_DIR / f"03_llm_{model_key}_{mode_dir}.log",
+        f"llm_{model_key}_{mode_dir}_{think_tag}",
+        LOGS_DIR / f"03_llm_{model_key}_{mode_dir}_{think_tag}.log",
     )
-    log.info(f"Model: {model_name} ({mode_dir})  output: {out_root}")
+    log.info(f"Model: {model_name} ({mode_dir}, think={args.think})  output: {out_root}")
     ensure_model_available(model_name)
     log.info("Ollama server reachable; model is pulled.")
 
@@ -110,7 +119,7 @@ def main() -> None:
                 messages = build_few_shot_messages(comment, examples)
 
             try:
-                pred: LLMPrediction = predict_one(model_name, messages)
+                pred: LLMPrediction = predict_one(model_name, messages, think=args.think)
             except Exception as e:                                  # network / timeout etc.
                 log.warning(f"  fold {fold_idx} idx {i} call failed: {e!r}")
                 pred = LLMPrediction(labels={lbl: 0 for lbl in LABELS},
