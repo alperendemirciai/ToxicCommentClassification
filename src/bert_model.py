@@ -31,19 +31,23 @@ from src.config import (
     BERT_USE_WEIGHTED_LOSS,
     BERT_WARMUP_RATIO,
     BERT_WEIGHT_DECAY,
+    CLEAN_TEXT,
     LABELS,
     NUM_LABELS,
     SEED,
 )
 from src.metrics import compute_metrics
+from src.text_clean import clean_text
 from src.utils import set_seed
 
 
 class ToxicDataset(Dataset):
     """Tokenize-on-the-fly multi-label dataset."""
 
-    def __init__(self, texts: list[str], labels: np.ndarray | None, tokenizer, max_len: int):
-        self.texts = texts
+    def __init__(self, texts: list[str], labels: np.ndarray | None, tokenizer, max_len: int,
+                 clean: bool = CLEAN_TEXT):
+        # Apply cleaning once at construction time so it isn't redone per epoch.
+        self.texts = [clean_text(t, enabled=clean) for t in texts]
         self.labels = labels
         self.tokenizer = tokenizer
         self.max_len = max_len

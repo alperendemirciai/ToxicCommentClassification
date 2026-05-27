@@ -12,7 +12,8 @@ from typing import Iterable
 
 import pandas as pd
 
-from src.config import LABELS, LLM_FEW_SHOT_K
+from src.config import CLEAN_TEXT, LABELS, LLM_FEW_SHOT_K
+from src.text_clean import clean_text
 
 SYSTEM_PROMPT = (
     "You are a strict multi-label content moderation classifier. "
@@ -50,7 +51,8 @@ def labels_to_json(label_dict: dict) -> str:
 
 
 def _truncate(text: str, max_chars: int = 800) -> str:
-    text = (text or "").strip().replace("\n", " ")
+    text = clean_text(text, enabled=CLEAN_TEXT)
+    text = text.strip().replace("\n", " ")
     return text if len(text) <= max_chars else text[:max_chars] + " ..."
 
 

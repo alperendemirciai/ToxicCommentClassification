@@ -21,6 +21,10 @@ SUBSAMPLE_SIZE = 8000
 N_FOLDS = 5
 INNER_VAL_RATIO = 0.10  # held out from each train-fold for best-epoch selection
 
+# Text cleaning toggle (structural noise + Unicode hygiene). See src/text_clean.py.
+# Applied uniformly to BERT inputs and LLM prompt comments when True.
+CLEAN_TEXT = True
+
 # BERT training defaults (used by 02_train_bert.py)
 BERT_MAX_LEN = 512
 BERT_MAX_LEN_FALLBACK = 256
