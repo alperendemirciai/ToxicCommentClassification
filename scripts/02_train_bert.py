@@ -19,6 +19,7 @@ import torch
 from src.config import (
     BERT_MAX_LEN,
     BERT_MAX_LEN_FALLBACK,
+    BERT_USE_WEIGHTED_LOSS,
     LABELS,
     LOGS_DIR,
     MODEL_REGISTRY,
@@ -38,6 +39,13 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--epochs", type=int, default=None)
     ap.add_argument("--batch-size", type=int, default=None)
     ap.add_argument("--only-fold", type=int, default=None, help="run only this fold idx")
+    w_group = ap.add_mutually_exclusive_group()
+    w_group.add_argument("--weighted", dest="weighted", action="store_true",
+                         help="enable BCE pos_weight to counter label imbalance")
+    w_group.add_argument("--no-weighted", dest="weighted", action="store_false")
+    ap.set_defaults(weighted=BERT_USE_WEIGHTED_LOSS)
+    ap.add_argument("--tag", default=None,
+                    help="optional suffix appended to results/bert_<model> output dir")
     return ap.parse_args()
 
 
@@ -47,11 +55,16 @@ def main() -> None:
 
     model_key = args.model
     model_name = MODEL_REGISTRY[model_key]
-    out_root = RESULTS_DIR / f"bert_{model_key}"
+    suffix = ""
+    if args.tag:
+        suffix = f"_{args.tag}"
+    elif args.weighted:
+        suffix = "_weighted"
+    out_root = RESULTS_DIR / f"bert_{model_key}{suffix}"
     out_root.mkdir(parents=True, exist_ok=True)
-    log = setup_logger(f"bert_{model_key}", LOGS_DIR / f"02_bert_{model_key}.log")
+    log = setup_logger(f"bert_{model_key}{suffix}", LOGS_DIR / f"02_bert_{model_key}{suffix}.log")
     log.info(f"Model: {model_name}  output: {out_root}")
-    log.info(f"max_len={args.max_len}  epochs={args.epochs}  batch_size={args.batch_size}")
+    log.info(f"max_len={args.max_len}  epochs={args.epochs}  batch_size={args.batch_size}  weighted={args.weighted}")
 
     df = load_subsample()
     fold_metrics: list[dict] = []
@@ -64,7 +77,8 @@ def main() -> None:
         log.info(f"=== fold {fold_idx}  train={len(train_df)}  val={len(val_df)}  test={len(test_df)} ===")
 
         # Build a TrainConfig with overrides if provided.
-        cfg_kwargs = dict(model_name=model_name, output_dir=fold_dir, max_len=args.max_len, seed=SEED)
+        cfg_kwargs = dict(model_name=model_name, output_dir=fold_dir, max_len=args.max_len,
+                          seed=SEED, use_weighted_loss=args.weighted)
         if args.epochs is not None:
             cfg_kwargs["epochs"] = args.epochs
         if args.batch_size is not None:
